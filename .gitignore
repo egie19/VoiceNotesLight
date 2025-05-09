@@ -32,8 +32,32 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+*.env
 
 # typescript
 *.tsbuildinfo
 
 app-example
+
+# Metro bundler cache
+/metro-cache
+
+# Android files
+android/app/build/
+android/.gradle
+android/build
+android/local.properties
+
+# iOS files
+ios/*
+ios/Pods/
+ios/build/
+ios/*.xcworkspace/
+
+# Fastlane files
+fastlane/report.xml
+fastlane/screenshots/
+
+#Temporary files
+tmp/
