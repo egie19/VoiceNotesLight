@@ -4,6 +4,7 @@ import { Audio, AVPlaybackStatus } from "expo-av";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  Dimensions,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -11,6 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+const { width, height } = Dimensions.get("window");
 
 type RecordingItem = {
   id: string;
@@ -135,7 +138,7 @@ export default RecordingsListScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
-  title: { fontSize: 24, marginBottom: 20 },
+  title: { fontSize: 30, marginTop: height * 0.1 },
   item: {
     paddingVertical: 10,
     borderBottomWidth: 1,

@@ -1,11 +1,13 @@
+import { transcribeWithOpenAI } from "@/utils/transcribeWithOpenAI";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio, AVPlaybackStatus } from "expo-av";
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
-  Button,
   Dimensions,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -27,6 +29,8 @@ const RecordScreen = () => {
     null
   );
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [transcription, setTranscription] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadLatestRecording();
@@ -34,6 +38,45 @@ const RecordScreen = () => {
       if (sound) sound.unloadAsync();
     };
   }, []);
+
+  const getMicrophonePermission = async () => {
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+
+      if (!granted) {
+        Alert.alert(
+          "Permission",
+          "Please grant permission to access microphone"
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.log(error);
+      return false;
+    }
+  };
+
+  const recordingOptions: any = {
+    android: {
+      extension: ".wav",
+      outPutFormat: Audio.AndroidOutputFormat.MPEG_4,
+      androidEncoder: Audio.AndroidAudioEncoder.AAC,
+      sampleRate: 44100,
+      numberOfChannels: 2,
+      bitRate: 128000,
+    },
+    ios: {
+      extension: ".wav",
+      audioQuality: Audio.IOSAudioQuality.HIGH,
+      sampleRate: 44100,
+      numberOfChannels: 2,
+      bitRate: 128000,
+      linearPCMBitDepth: 16,
+      linearPCMIsBigEndian: false,
+      linearPCMIsFloat: false,
+    },
+  };
 
   const loadLatestRecording = async () => {
     try {
@@ -48,24 +91,20 @@ const RecordScreen = () => {
   };
 
   const startRecording = async () => {
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission required", "Microphone access is needed.");
-        return;
-      }
+    const hasPermission = await getMicrophonePermission();
+    if (!hasPermission) return;
 
+    try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      const { recording } = await Audio.Recording.createAsync(recordingOptions);
       setRecording(recording);
-    } catch (err) {
-      console.error("Failed to start recording", err);
+    } catch (error) {
+      console.log("Failed to start Recording", error);
+      Alert.alert("Error", "Failed to start recording");
     }
   };
 
@@ -74,6 +113,9 @@ const RecordScreen = () => {
       if (!recording) return;
 
       await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
       const uri = recording.getURI();
       if (!uri) return;
 
@@ -88,6 +130,11 @@ const RecordScreen = () => {
       recordings.push(newRecord);
       await AsyncStorage.setItem("@recordings", JSON.stringify(recordings));
 
+      // transcribe
+      setLoading(true);
+      const textTranscribe = await transcribeWithOpenAI(uri);
+      setTranscription(textTranscribe);
+
       setRecording(null);
       setLatestRecording(newRecord);
       console.log(`Recording saved at ${uri}`);
@@ -95,10 +142,12 @@ const RecordScreen = () => {
       Alert.alert("Voice Notes has been saved");
     } catch (err) {
       console.error("Failed to stop recording", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const playLatestRecording = async (): Promise<void> => {
+  const playLatestRecording = async () => {
     if (!latestRecording) return;
 
     try {
@@ -146,13 +195,22 @@ const RecordScreen = () => {
         </Text>
       </TouchableOpacity>
 
+      {loading && <ActivityIndicator style={{ marginTop: 20 }} />}
+
+      {!loading && transcription !== "" && (
+        <ScrollView style={styles.transcriptionContainer}>
+          <Text style={styles.transcriptionTitle}>Transcription</Text>
+          <Text style={styles.transcriptionText}>{transcription}</Text>
+        </ScrollView>
+      )}
+
       {latestRecording && (
-        <View style={styles.spacer}>
-          <Button title="Play Latest Recording" onPress={playLatestRecording} />
-          <Text style={styles.timestamp}>
-            Last: {new Date(latestRecording.date).toLocaleString()}
-          </Text>
-        </View>
+        <TouchableOpacity
+          style={styles.playButton}
+          onPress={playLatestRecording}
+        >
+          <Text style={styles.playButtonText}>▶ Play Latest Recording</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -204,5 +262,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#1A1A1A",
+  },
+  playButton: {
+    marginTop: 20,
+    backgroundColor: "#20B2AA",
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    alignSelf: "center",
+    maxWidth: 300,
+  },
+  playButtonText: { color: "#fff", fontSize: 16 },
+  textTranscrition: { marginTop: 20, fontSize: 16 },
+  transcriptionContainer: {
+    backgroundColor: "#e0f7f7",
+    padding: 15,
+    borderRadius: 10,
+    maxHeight: 200,
+    marginTop: 10,
+  },
+  transcriptionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 5,
+    color: "#006666",
+  },
+  transcriptionText: {
+    fontSize: 15,
+    color: "#004d4d",
   },
 });

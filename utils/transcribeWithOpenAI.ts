@@ -1,40 +1,41 @@
-import OpenAI from 'openai';
+import axios from "axios";
 
-const OPENAI_API_KEY = process.env.OPEN_AI_KEY;
+const EXPO_OPEN_AI_KEY = process.env.EXPO_PUBLIC_OPENAI_KEY!;
+
+if (!EXPO_OPEN_AI_KEY) {
+  throw new Error('Missing OpenAI API Key. Please set EXPO_OPEN_AI_KEY in your .env');
+}
 
 
 export const transcribeWithOpenAI = async (uri: string) => {
   try {
-    const filename = uri.split('/').pop() || 'audio.m4a' 
 
-    const formData = new FormData();
+      const formData: any = new FormData();
+      const filename = uri.split(/[/\\]/).pop();
 
-    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+      console.log("FILENAME::" + filename);
+      
+      formData.append("file", {
+        uri,
+        type: "audio/wav",
+        name: filename,
+      });
+      formData.append("model", "whisper-1");
 
-    formData.append('file', {
-      uri,
-      name: filename,
-      type: `${filename}`, // or audio/mp3 depending on your format
-    } as any);
-    formData.append('model', 'whisper-1');
+      const response = await axios.post(
+        "https://api.openai.com/v1/audio/transcriptions",
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${EXPO_OPEN_AI_KEY}`,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data.text;
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
-    const file = formData.get('file') as File;
-
-    const response = await openai.audio.transcriptions.create({
-        file,
-        model: 'whisper-1'
-    });
-
-    // const data = await response.text;
-
-    // if (!response.ok) {
-    //   console.error('OpenAI Whisper error:', data);
-    //   return 'Transcription failed';
-    // }
-
-    return Response.json({ text: response.text });
-  } catch (err) {
-    console.error('OpenAI Whisper fetch error:', err);
-    return 'Transcription failed';
-  }
-};
+  
