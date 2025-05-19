@@ -1,6 +1,9 @@
+import { RecordingItem } from "@/types/RecordingTypes";
+import fileSystemHelper from "@/utils/fileSystemHelper";
+import storage from "@/utils/localStore";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio, AVPlaybackStatus } from "expo-av";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
@@ -13,13 +16,7 @@ import {
   View,
 } from "react-native";
 
-const { width, height } = Dimensions.get("window");
-
-type RecordingItem = {
-  id: string;
-  uri: string;
-  date: string;
-};
+const { height } = Dimensions.get("window");
 
 const RecordingsListScreen = () => {
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
@@ -37,9 +34,12 @@ const RecordingsListScreen = () => {
 
   const loadRecordings = async (): Promise<void> => {
     try {
-      const stored = await AsyncStorage.getItem("@recordings");
-      const parsed: RecordingItem[] = stored ? JSON.parse(stored) : [];
-      setRecordings(parsed);
+      const storedRecords = await storage.getItem<[RecordingItem]>(
+        "@recordings"
+      );
+      if (storedRecords) {
+        setRecordings(storedRecords);
+      }
     } catch (err) {
       console.error("Failed to load recordings", err);
     }
@@ -61,6 +61,7 @@ const RecordingsListScreen = () => {
       const { sound: newSound } = await Audio.Sound.createAsync({
         uri: item.uri,
       });
+
       setSound(newSound);
       setPlayingId(item.id);
       await newSound.playAsync();
@@ -77,17 +78,24 @@ const RecordingsListScreen = () => {
     }
   };
 
-  const deleteRecording = async (id: string) => {
-    const filtered = recordings.filter((r) => r.id !== id);
-    await AsyncStorage.setItem("@recordings", JSON.stringify(filtered));
-    setRecordings(filtered);
-    Alert.alert("Deleted", "Recording has been deleted.");
+  const deleteRecording = async (id: string, filePath: string) => {
+    try {
+      const filtered = recordings.filter((r) => r.id !== id);
+      await fileSystemHelper.deleteFilePath(filePath);
+      await storage.setItem<RecordingItem[]>("@recordings", filtered);
+      setRecordings(filtered);
+      Alert.alert("Deleted", "Recording has been deleted.");
+    } catch (error) {
+      console.log(error);
+    }
   };
 
   const renderItem = ({ item }: { item: RecordingItem }) => (
     <View style={styles.item}>
       <View style={{ flex: 1 }}>
-        <Text>{new Date(item.date).toLocaleString()}</Text>
+        <Text style={styles.itemText}>
+          {new Date(item.date).toLocaleString()}
+        </Text>
       </View>
       <View style={styles.iconGroup}>
         <TouchableOpacity
@@ -97,7 +105,7 @@ const RecordingsListScreen = () => {
           <Ionicons
             name={playingId === item.id ? "play-circle-outline" : "play-circle"}
             size={28}
-            color={playingId === item.id ? "#aaa" : "#007AFF"}
+            color={playingId === item.id ? "#aaa" : "#b1e022"}
           />
         </TouchableOpacity>
         <TouchableOpacity
@@ -107,7 +115,7 @@ const RecordingsListScreen = () => {
               {
                 text: "Delete",
                 style: "destructive",
-                onPress: () => deleteRecording(item.id),
+                onPress: () => deleteRecording(item.id, item.uri),
               },
             ])
           }
@@ -119,7 +127,12 @@ const RecordingsListScreen = () => {
   );
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={["#207378", "#CCCCCC"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 2 }}
+      style={styles.container}
+    >
       <Text style={styles.title}>Saved Recordings</Text>
       <FlatList
         data={recordings}
@@ -128,9 +141,11 @@ const RecordingsListScreen = () => {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        ListEmptyComponent={<Text>No recordings found.</Text>}
+        ListEmptyComponent={
+          <Text style={styles.noItemText}>No recordings found.</Text>
+        }
       />
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -138,7 +153,7 @@ export default RecordingsListScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
-  title: { fontSize: 30, marginTop: height * 0.1 },
+  title: { fontSize: 30, marginTop: height * 0.1, color: "white" },
   item: {
     paddingVertical: 10,
     borderBottomWidth: 1,
@@ -151,5 +166,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 16,
     alignItems: "center",
+  },
+  itemText: {
+    color: "white",
+    fontSize: 14,
+  },
+  noItemText: {
+    color: "white",
+    fontSize: 18,
   },
 });

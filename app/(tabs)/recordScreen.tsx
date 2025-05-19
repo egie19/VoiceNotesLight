@@ -1,10 +1,15 @@
+import AnimatedTyping from "@/components/AnimatedTyping";
+import { default as service } from "@/services/recordService";
+import { RecordingItem } from "@/types/RecordingTypes";
+import fileSystemHelper from "@/utils/fileSystemHelper";
+import storage from "@/utils/localStore";
 import { transcribeWithOpenAI } from "@/utils/transcribeWithOpenAI";
-import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { FontAwesome } from "@expo/vector-icons";
 import { Audio, AVPlaybackStatus } from "expo-av";
+import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Dimensions,
   ScrollView,
@@ -13,15 +18,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { scale } from "react-native-size-matters";
 import uuid from "react-native-uuid";
 
-const { width, height } = Dimensions.get("window");
-
-type RecordingItem = {
-  id: string;
-  uri: string;
-  date: string;
-};
+const { height } = Dimensions.get("window");
 
 const RecordScreen = () => {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -30,7 +30,8 @@ const RecordScreen = () => {
   );
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [transcription, setTranscription] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   useEffect(() => {
     loadLatestRecording();
@@ -57,33 +58,11 @@ const RecordScreen = () => {
     }
   };
 
-  const recordingOptions: any = {
-    android: {
-      extension: ".wav",
-      outPutFormat: Audio.AndroidOutputFormat.MPEG_4,
-      androidEncoder: Audio.AndroidAudioEncoder.AAC,
-      sampleRate: 44100,
-      numberOfChannels: 2,
-      bitRate: 128000,
-    },
-    ios: {
-      extension: ".wav",
-      audioQuality: Audio.IOSAudioQuality.HIGH,
-      sampleRate: 44100,
-      numberOfChannels: 2,
-      bitRate: 128000,
-      linearPCMBitDepth: 16,
-      linearPCMIsBigEndian: false,
-      linearPCMIsFloat: false,
-    },
-  };
-
   const loadLatestRecording = async () => {
     try {
-      const stored = await AsyncStorage.getItem("@recordings");
-      const recordings: RecordingItem[] = stored ? JSON.parse(stored) : [];
-      if (recordings.length > 0) {
-        setLatestRecording(recordings[recordings.length - 1]);
+      let recording = await service.loadLatestRecording();
+      if (recording) {
+        setLatestRecording(recording);
       }
     } catch (error) {
       console.error("Error loading recordings", error);
@@ -95,12 +74,16 @@ const RecordScreen = () => {
     if (!hasPermission) return;
 
     try {
+      setIsRecording(true);
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(recordingOptions);
+      const { recording } = await Audio.Recording.createAsync(
+        service.recordingOptions
+      );
+
       setRecording(recording);
     } catch (error) {
       console.log("Failed to start Recording", error);
@@ -125,25 +108,26 @@ const RecordScreen = () => {
         date: new Date().toISOString(),
       };
 
-      const stored = await AsyncStorage.getItem("@recordings");
-      const recordings: RecordingItem[] = stored ? JSON.parse(stored) : [];
-      recordings.push(newRecord);
-      await AsyncStorage.setItem("@recordings", JSON.stringify(recordings));
+      const recordings = await storage.getItem<[RecordingItem]>("@recordings");
+      if (recordings) {
+        recordings.push(newRecord);
+        await storage.setItem<[RecordingItem]>("@recordings", recordings);
+        setLatestRecording(newRecord);
 
-      // transcribe
-      setLoading(true);
-      const textTranscribe = await transcribeWithOpenAI(uri);
-      setTranscription(textTranscribe);
-
-      setRecording(null);
-      setLatestRecording(newRecord);
-      console.log(`Recording saved at ${uri}`);
-
-      Alert.alert("Voice Notes has been saved");
+        // transcribe
+        setTranscription("");
+        setIsTranscribing(true);
+        const textTranscribe = await transcribeWithOpenAI(uri);
+        // console.log("WILL SET TRANSCRIPTION::: " + textTranscribe);
+        setTranscription(textTranscribe);
+        console.log(`Recording saved at ${uri}`);
+      }
     } catch (err) {
       console.error("Failed to stop recording", err);
     } finally {
-      setLoading(false);
+      setRecording(null);
+      setIsTranscribing(false);
+      setIsRecording(false);
     }
   };
 
@@ -154,6 +138,19 @@ const RecordScreen = () => {
       if (sound) {
         await sound.unloadAsync();
         setSound(null);
+      }
+
+      let isFileExist = await fileSystemHelper.filePathExists(
+        latestRecording.uri
+      );
+
+      if (!isFileExist) {
+        Alert.alert(
+          "Error",
+          "Latest recording doesn't exist. File might have been deleted"
+        );
+        setLatestRecording(null);
+        return;
       }
 
       const { sound: newSound } = await Audio.Sound.createAsync({
@@ -174,62 +171,93 @@ const RecordScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={["#207378", "#CCCCCC"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 2 }}
+      style={styles.container}
+    >
       <View style={styles.appNameContainer}>
         <Text style={styles.appName}>Voice Notes Lite</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.recordButtonContainer}
-        onPress={recording ? stopRecording : startRecording}
-      >
-        <View style={styles.iconContainer}>
-          <Ionicons
-            name={recording ? "stop" : "play"}
-            size={20}
-            color={recording ? "red" : "blue"}
-          />
-        </View>
-        <Text style={styles.recordButtonText}>
-          {recording ? "Stop Recording" : "Start Recording"}
-        </Text>
-      </TouchableOpacity>
+      {!isRecording
+        ? !isTranscribing && (
+            <TouchableOpacity
+              style={styles.onMicStandBy}
+              onPress={startRecording}
+            >
+              <FontAwesome name="microphone" size={scale(50)} color="#2b3356" />
+            </TouchableOpacity>
+          )
+        : !isTranscribing && (
+            <TouchableOpacity onPress={stopRecording}>
+              <LottieView
+                source={require("@/assets/animations/lottieMic.json")}
+                autoPlay
+                loop
+                speed={1.3}
+                style={{ width: scale(250), height: scale(250) }}
+              />
+            </TouchableOpacity>
+          )}
 
-      {loading && <ActivityIndicator style={{ marginTop: 20 }} />}
+      {isTranscribing && (
+        <LottieView
+          source={require("@/assets/animations/lottieTranscribing.json")}
+          autoPlay
+          loop
+          speed={1.3}
+          style={{ width: scale(250), height: scale(250) }}
+        />
+      )}
 
-      {!loading && transcription !== "" && (
+      {transcription && !isTranscribing && (
         <ScrollView style={styles.transcriptionContainer}>
-          <Text style={styles.transcriptionTitle}>Transcription</Text>
-          <Text style={styles.transcriptionText}>{transcription}</Text>
+          <AnimatedTyping message={transcription} speed={100} />
         </ScrollView>
       )}
 
-      {latestRecording && (
+      {latestRecording && !isTranscribing && !isRecording && (
         <TouchableOpacity
           style={styles.playButton}
           onPress={playLatestRecording}
         >
           <Text style={styles.playButtonText}>▶ Play Latest Recording</Text>
+          <Text style={styles.timestamp}>
+            {new Date(latestRecording.date).toLocaleString()}
+          </Text>
         </TouchableOpacity>
       )}
-    </View>
+    </LinearGradient>
   );
 };
 
 export default RecordScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  appNameContainer: { alignItems: "center", marginTop: height * 0.1 },
+  container: { flex: 1, justifyContent: "center", alignItems: "center" },
+  appNameContainer: {
+    alignItems: "center",
+    position: "absolute",
+    top: height * 0.1,
+  },
   appName: {
     fontSize: 42,
     fontWeight: "700",
     letterSpacing: 0.5,
     marginBottom: 8,
+    color: "white",
   },
   title: { fontSize: 24, marginBottom: 20 },
   spacer: { marginTop: 30, alignItems: "center" },
-  timestamp: { marginTop: 10, fontStyle: "italic" },
+  timestamp: {
+    marginTop: 10,
+    fontStyle: "italic",
+    fontWeight: "400",
+    fontSize: 12,
+    color: "white",
+  },
   recordButtonContainer: {
     flexDirection: "row",
     alignSelf: "center",
@@ -275,11 +303,10 @@ const styles = StyleSheet.create({
   playButtonText: { color: "#fff", fontSize: 16 },
   textTranscrition: { marginTop: 20, fontSize: 16 },
   transcriptionContainer: {
-    backgroundColor: "#e0f7f7",
     padding: 15,
     borderRadius: 10,
     maxHeight: 200,
-    marginTop: 10,
+    marginTop: 15,
   },
   transcriptionTitle: {
     fontSize: 16,
@@ -290,5 +317,14 @@ const styles = StyleSheet.create({
   transcriptionText: {
     fontSize: 15,
     color: "#004d4d",
+  },
+  onMicStandBy: {
+    width: scale(110),
+    height: scale(110),
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: scale(100),
   },
 });

@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const EXPO_OPEN_AI_KEY = process.env.EXPO_PUBLIC_OPENAI_KEY!;
+const EXPO_PUBLIC_URL_OPENAI = process.env.EXPO_PUBLIC_URL_OPENAI
 
 if (!EXPO_OPEN_AI_KEY) {
   throw new Error('Missing OpenAI API Key. Please set EXPO_OPEN_AI_KEY in your .env');
@@ -23,7 +24,7 @@ export const transcribeWithOpenAI = async (uri: string) => {
       formData.append("model", "whisper-1");
 
       const response = await axios.post(
-        "https://api.openai.com/v1/audio/transcriptions",
+        `${EXPO_PUBLIC_URL_OPENAI}`,
         formData,
         {
           headers: {
