@@ -26,10 +26,6 @@ const RecordingsListScreen = () => {
 
   useEffect(() => {
     loadRecordings();
-
-    return () => {
-      if (sound) sound.unloadAsync();
-    };
   }, []);
 
   const loadRecordings = async (): Promise<void> => {

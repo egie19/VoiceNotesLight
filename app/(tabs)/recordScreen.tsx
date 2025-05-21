@@ -35,9 +35,6 @@ const RecordScreen = () => {
 
   useEffect(() => {
     loadLatestRecording();
-    return () => {
-      if (sound) sound.unloadAsync();
-    };
   }, []);
 
   const getMicrophonePermission = async () => {
